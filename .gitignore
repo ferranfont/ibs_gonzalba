@@ -1,0 +1,7 @@
+# never upload 
+.env
+.csv
+.html
+.docx
+.pdf
+.xlsx
