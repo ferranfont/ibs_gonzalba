@@ -3,7 +3,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import os
 import sys
-from CONFIG import THRESHOLD
+from config import ENTRY_THRESHOLD, EXIT_THRESHOLD, MIN_LAST_DAYS
 
 # Force UTF-8 for Windows console
 if sys.platform == "win32":
@@ -18,8 +18,9 @@ def plot_spy_chart():
         return
 
     print(f"Reading data from {file_path}...")
-    df = pd.read_csv(file_path)
-    # Clean column names (remove surrounding whitespace)
+    # Handle spaces in CSV with skipinitialspace
+    df = pd.read_csv(file_path, skipinitialspace=True)
+    # Clean column names (remove surrounding whitespace just in case)
     df.columns = df.columns.str.strip()
     
     # Process date
@@ -51,6 +52,50 @@ def plot_spy_chart():
         vertical_spacing=0.03
     )
 
+    # Calculate IBS and Filter Signals
+    # Formula: IBS = (Close - Low) / (High - Low)
+    # This formula is independent of candle color (Open vs Close).
+    # It purely measures the position of the Close relative to the Day's Range.
+    df['high_low_diff'] = df['High'] - df['Low']
+    # Avoid division by zero
+    df['ibs'] = df.apply(
+        lambda row: (row['Close'] - row['Low']) / row['high_low_diff'] if row['high_low_diff'] != 0 else 0, 
+        axis=1
+    )
+
+    # Calculate Min Last Days (Rolling Low)
+    df['min_last_days'] = df['Low'].rolling(window=MIN_LAST_DAYS).min()
+
+    # Filter rows for Entry Signals
+    # Logic: IBS < ENTRY_THRESHOLD (0.2) AND Low <= min_last_days (Current Low is the 10-day low)
+    # Note: rolling().min() includes current row, so Low <= min is Low == min
+    entry_signals = df[(df['ibs'] < ENTRY_THRESHOLD) & (df['Low'] <= df['min_last_days'])].copy()
+    entry_signals['tag'] = 'entry'
+    
+    # Filter rows for Exit Signals
+    # Logic: IBS > EXIT_THRESHOLD (0.6)
+    # User's request mention "IBS > MIN_LAST_DAYS" was interpreted as "IBS > EXIT_THRESHOLD" since IBS is 0-1.
+    exit_signals = df[df['ibs'] > EXIT_THRESHOLD].copy()
+    exit_signals['tag'] = 'exit'
+
+    print(f"Found {len(entry_signals)} Entry signals (IBS < {ENTRY_THRESHOLD} & Low <= 10d Low)")
+    print(f"Found {len(exit_signals)} Exit signals (IBS > {EXIT_THRESHOLD})")
+
+    # Combine and save signals to CSV
+    all_signals = pd.concat([entry_signals, exit_signals]).sort_index()
+
+    outputs_dir = 'outputs'
+    if not os.path.exists(outputs_dir):
+        os.makedirs(outputs_dir)
+    signals_output_path = os.path.join(outputs_dir, 'entry_signals.csv')
+    
+    # Save relevant columns
+    cols_to_save = ['timestamp', 'Open', 'High', 'Low', 'Close', 'ibs', 'tag']
+    # Add index to cols if needed, but timestamp is better. timestamp is already in df.
+    
+    all_signals[cols_to_save].to_csv(signals_output_path, index=False)
+    print(f"All signals saved to: {signals_output_path}")
+
     # Add Price trace (Candlestick)
     trace_price = go.Candlestick(
         x=df['index'],
@@ -59,49 +104,60 @@ def plot_spy_chart():
         low=df['Low'],
         close=df['Close'],
         name='SPY',
-        increasing=dict(line=dict(color='green')),
-        decreasing=dict(line=dict(color='red')),
+        increasing=dict(line=dict(color='grey', width=1), fillcolor='green'),
+        decreasing=dict(line=dict(color='grey', width=1), fillcolor='red'),
         opacity=0.9
     )
     fig.add_trace(trace_price, row=1, col=1)
 
-    # Calculate IBS and Filter Signals
-    # Formula: IBS = (Close - Low) / (High - Low)
-    # Ensure denominator is not zero
-    df['high_low_diff'] = df['High'] - df['Low']
-    # Use a small epsilon or fillna to handle div by zero but effectively 0 range means 0 IBS or ignore
-    df['ibs'] = (df['Close'] - df['Low']) / df['high_low_diff']
-    df['ibs'] = df['ibs'].fillna(0.0)
+    # Add Min Last Days Line
+    trace_min = go.Scatter(
+        x=df['index'],
+        y=df['min_last_days'],
+        mode='lines',
+        name=f'Min Last {MIN_LAST_DAYS} Days',
+        line=dict(color='blue', width=2),
+        hovertemplate='<b>Min Last Days</b>: %{y:.2f}<extra></extra>'
+    )
+    fig.add_trace(trace_min, row=1, col=1)
 
-    # Filter rows where IBS > THRESHOLD
-    signals = df[df['ibs'] > THRESHOLD].copy()
-    
-    print(f"Found {len(signals)} signals with IBS > {THRESHOLD}")
-
-    # Save signals to CSV
-    outputs_dir = 'outputs'
-    if not os.path.exists(outputs_dir):
-        os.makedirs(outputs_dir)
-    signals_output_path = os.path.join(outputs_dir, 'entry_signals.csv')
-    signals.to_csv(signals_output_path, index=False)
-    print(f"Entry signals saved to: {signals_output_path}")
-
-    # Add Blue Dots for Signals
-    if not signals.empty:
-        trace_signals = go.Scatter(
-            x=signals['index'],
-            y=signals['Close'], # Plot dot at Close price
+    # Add Green Dots for Entry Signals (Below Low)
+    if not entry_signals.empty:
+        trace_entry = go.Scatter(
+            x=entry_signals['index'],
+            y=entry_signals['Low'] * 0.999, # Slightly below Low
             mode='markers',
-            name=f'IBS > {THRESHOLD}',
+            name=f'Entry (IBS < {ENTRY_THRESHOLD} & Low=Min)',
             marker=dict(
-                color='blue',
+                color='green',
                 size=8,
                 symbol='circle'
             ),
-            hovertemplate='<b>Signal</b><br>Price: %{y:.2f}<br>IBS: %{customdata:.2f}<extra></extra>',
-            customdata=signals['ibs']
+            hovertemplate='<b>Entry Signal</b><br>Date: %{text}<br>Price: %{y:.2f}<br>IBS: %{customdata:.2f}<extra></extra>',
+            text=entry_signals['timestamp'].dt.strftime('%Y-%m-%d'),
+            customdata=entry_signals['ibs']
         )
-        fig.add_trace(trace_signals, row=1, col=1)
+        fig.add_trace(trace_entry, row=1, col=1)
+
+    # Add Red Dots for Exit Signals (Above High)
+    if not exit_signals.empty:
+        trace_exit = go.Scatter(
+            x=exit_signals['index'],
+            y=exit_signals['High'] * 1.001, # Slightly above High
+            mode='markers',
+            name=f'Exit (IBS > {EXIT_THRESHOLD})',
+            marker=dict(
+                size=8,
+                symbol='circle',
+                color='red'
+            ),
+            hovertemplate='<b>Exit Signal</b><br>Date: %{text}<br>Price: %{y:.2f}<br>IBS: %{customdata:.2f}<extra></extra>',
+            text=exit_signals['timestamp'].dt.strftime('%Y-%m-%d'),
+            customdata=exit_signals['ibs']
+        )
+        fig.add_trace(trace_exit, row=1, col=1)
+
+
 
     # Make the rangeslider invisible to maintain the "inspired" usage of x-axis
     fig.update_layout(xaxis_rangeslider_visible=False)
@@ -123,7 +179,7 @@ def plot_spy_chart():
 
     # Configure layout - strictly following the "inspiration" style
     fig.update_layout(
-        title='SPY Close Price - Inspired Style',
+        title= "QQQ Close Price",
         template='plotly_white',
         hovermode='closest',
         plot_bgcolor='white',

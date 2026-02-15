@@ -1,9 +1,10 @@
 import pandas as pd
 import os
+from config import ENTRY_THRESHOLD, EXIT_THRESHOLD, INSTRUMENT
 
 def calculate_ibs():
     # Define input and output paths
-    input_path = os.path.join('data', 'spy.csv')
+    input_path = os.path.join('data', f'{INSTRUMENT}.csv')
     output_dir = 'outputs'
     output_path = os.path.join(output_dir, 'ibs_indicator.csv')
 
@@ -55,17 +56,31 @@ def calculate_ibs():
     df['ibs_value'] = (df['Close'] - df['Low']) / df['denominator']
     
     # Fill NaN/Inf results (where High == Low) with 0.5 or 0
-    df['ibs_value'] = df['ibs_value'].fillna(0.0) 
+    df['ibs_value'] = df['ibs_value'].fillna(0.0)
+
+    # Determine Tags based on Thresholds
+    # tag = 'entry' if ibs > ENTRY_THRESHOLD
+    # tag = 'exit' if ibs < EXIT_THRESHOLD
+    # else empty string or None
+    def get_tag(ibs):
+        if ibs < ENTRY_THRESHOLD:
+            return 'entry'
+        elif ibs > EXIT_THRESHOLD:
+            return 'exit'
+        else:
+            return None
+
+    df['tag'] = df['ibs_value'].apply(get_tag)
 
     # Select columns for output
-    # datetime, open, close, high, low, ibs_value
-    output_columns = ['datetime', 'Open', 'Close', 'High', 'Low', 'ibs_value']
+    # datetime, open, close, high, low, ibs_value, tag
+    output_columns = ['datetime', 'Open', 'Close', 'High', 'Low', 'ibs_value', 'tag']
     
     # Rename columns to lowercase for the output as requested ("datetime, open, close, hihg, low...... and ibs_value")
     # Note: user wrote "hihg", assuming "high"
     
     result_df = df[output_columns].copy()
-    result_df.columns = ['datetime', 'open', 'close', 'high', 'low', 'ibs_value']
+    result_df.columns = ['datetime', 'open', 'close', 'high', 'low', 'ibs_value', 'tag']
 
     print(f"IBS calculated. Sample:\n{result_df[['datetime', 'ibs_value']].head()}")
 

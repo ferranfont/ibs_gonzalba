@@ -1,7 +1,8 @@
 # never upload 
 .env
-.csv
-.html
+*.csv
 .docx
 .pdf
 .xlsx
+__pycache__/
+*.pyc

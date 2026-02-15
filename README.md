@@ -1,69 +1,78 @@
-# Proyecto Indicador IBS (Internal Bar Strength)
+# IBS Trading System (For Nasdaq Futures - NQ=F)
 
-Este proyecto calcula y visualiza el indicador IBS (Internal Bar Strength) para el SPY, identificando señales de compra o venta basadas en un umbral configurable.
+This project implements a complete algorithmic trading system based on the **Internal Bar Strength (IBS)** indicator and **Minimum Low of Last X Days** logic. It is specifically configured for trading **Nasdaq 100 Futures (NQ=F)**.
 
-## Descripción del Indicador IBS
+## 🚀 Key Features
 
-El IBS mide dónde cerró el precio dentro del rango diario (High - Low).
+*   **Instrument:** Nasdaq 100 Futures (`NQ=F`).
+*   **Point Value:** **$20 per point** ($5 per tick).
+*   **Trading Strategy:**
+    *   **Entry (Long Only):** Enter on Open if previous day's IBS < `ENTRY_THRESHOLD` (0.2) AND Low <= Minimum Low of Last `MIN_LAST_DAYS` (10).
+    *   **Exit:** Exit on Open if previous day's IBS > `EXIT_THRESHOLD` (0.6).
+    *   **Position Management:** Maximum of **3 open positions** at any time.
+*   **Reporting:**
+    *   Detailed Trade Log (CSV).
+    *   Interactive Equity Curve Area Chart (Green).
+    *   Comprehensive Performance Metrics (Sharpe, Sortino, Win Rate, Profit Factor).
+    *   Yearly Performance Breakdown Table.
 
-**Fórmula:**
+## 📂 Project Structure
+
+### Main Scripts
+
+*   **`main.py`**: The orchestrator script. Runs the entire workflow from data download to summary report generation.
+*   **`config.py`**: Central configuration file.
+    *   Contains parameters like `INSTRUMENT`, `POINT_VALUE`, `ENTRY_THRESHOLD`, `EXIT_THRESHOLD`, `START_DATE`, `END_DATE`.
+*   **`ibs_trading_system.py`**: The core trading engine.
+    *   Executes the backtest.
+    *   Manages positions and calculates PnL (Points and Dollars).
+    *   Generates the trade log (`outputs/trading_record.csv`).
+*   **`ibs_summary.py`**: Reporting module.
+    *   Generates a professional HTML dashboard (`charts/summary.html`).
+    *   Calculates advanced metrics and yearly statistics.
+*   **`import_data.py`**: Generic data downloader using `yfinance`.
+*   **`find_min_last_days.py`**: Calculates and plots the "Minimum Low of Last X Days" indicator.
+*   **`find_ibs_indicator.py`**: Calculates the IBS indicator values.
+
+### Directories
+
+*   **`data/`**: Stores raw CSV data (e.g., `NQ=F.csv`).
+*   **`outputs/`**: Stores processed data files (`trading_record.csv`, `ibs_indicator.csv`).
+*   **`charts/`**: Stores generated HTML charts (`summary.html`, `trading_system_chart.html`).
+
+## 🛠️ Usage
+
+1.  **Install Dependencies:**
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+2.  **Run the System:**
+    ```bash
+    python main.py
+    ```
+
+    This command will automatically:
+    1.  Download the latest data for `NQ=F`.
+    2.  Calculate indicators.
+    3.  Run the trading system backtest.
+    4.  Generate the summary report.
+    5.  Open `charts/summary.html` in your default web browser.
+
+## 📊 Strategy Logic Details
+
+### IBS Formula
 $$ IBS = \frac{Close - Low}{High - Low} $$
 
-- **Valor cercano a 0:** El precio cerró cerca del mínimo del día.
-- **Valor cercano a 1:** El precio cerró cerca del máximo del día.
+### Entry Logic
+*   **Signal:** Day's IBS < 0.2
+*   **Filter:** Day's Low <= Lowest Low of last 10 days.
+*   **Action:** Buy at Next Day's Open.
 
-## Componentes del Proyecto
+### Exit Logic
+*   **Signal:** Day's IBS > 0.6.
+*   **Action:** Sell at Next Day's Open.
 
-### 1. Descarga de Datos (`impot_data.py`)
-- Descarga datos históricos del SPY usando `yfinance`.
-- Guarda los datos en `data/spy.csv`.
-
-### 2. Cálculo del Indicador (`find_ibs_indicator.py`)
-- Lee el archivo `data/spy.csv`.
-- Calcula el valor del IBS para cada vela diaria.
-- Genera un archivo con los resultados en `outputs/ibs_indicator.csv`.
-
-### 3. Configuración (`CONFIG.PY`)
-- Define los parámetros clave del proyecto.
-- `THRESHOLD`: Umbral para identificar señales (por defecto 0.9). Si el IBS > THRESHOLD, se considera una señal.
-
-### 4. Visualización y Señales (`plot_spy_data.py`)
-- Lee los datos y el umbral configurado.
-- Genera un gráfico interactivo (`charts/spy_chart.html`) usando `plotly`:
-  - **Velas Japonesas:** Muestra la acción del precio (Velde/Rojo).
-  - **Puntos Azules:** Señalan los días donde el IBS superó el umbral configurado.
-- Filtra y guarda las señales detectadas en `outputs/entry_signals.csv`.
-- El gráfico se abre automáticamente en el navegador.
-
-## Estructura de Directorios
-
-- `data/`: Contiene los datos históricos descargados (`spy.csv`).
-- `outputs/`: Contiene los resultados procesados (`ibs_indicator.csv`, `entry_signals.csv`).
-- `charts/`: Contiene los gráficos generados (`spy_chart.html`).
-- `CONFIG.PY`: Archivo de configuración.
-
-## Requisitos
-
-Las dependencias necesarias se encuentran en `requirements.txt`:
-- pandas
-- plotly
-- numpy
-- yfinance
-- matplotlib
-
-## Uso
-
-1.  **Descargar datos:**
-    ```bash
-    python impot_data.py
-    ```
-2.  **Calcular indicador (opcional, el paso 3 también lo hace):**
-    ```bash
-    python find_ibs_indicator.py
-    ```
-3.  **Generar gráfico y señales:**
-    ```bash
-    python plot_spy_data.py
-    ```
-
-Este comando abrirá el gráfico en tu navegador y guardará las señales encontradas en la carpeta `outputs`.
+### PnL Calculation
+*   Standard Point Value for NQ Futures is used ($20/point).
+*   PnL ($) = (Exit Price - Entry Price) * 20.
